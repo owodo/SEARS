@@ -107,7 +107,7 @@ export const MeasurementEntryForm = ({ sectionId, sectionType }: MeasurementEntr
     try {
       const { error } = await supabase
         .from('measurements')
-        .upsert({
+        .insert({
           section_id: sectionId,
           scientist_id: profile.id,
           value: parseFloat(data.value),
