@@ -114,7 +114,7 @@ export const MeasurementEntryForm = ({ sectionId, sectionType }: MeasurementEntr
           batch_number: data.batch_number,
           reading_number: data.reading_number,
           unit: data.unit,
-        }, { onConflict: ['section_id', 'batch_number', 'reading_number'] });
+        }, { });
 
       if (error) throw error;
 
