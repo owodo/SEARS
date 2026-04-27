@@ -319,13 +319,21 @@ export const LabOwnerDashboard = () => {
       return;
     }
 
+    if (!profile?.lab_id) {
+      toast.error('You must be assigned to a lab before inviting scientists');
+      return;
+    }
+
     setIsInviting(true);
+    
     try {
       // Create user account first, then the profile will be created by trigger
+      const redirectUrl = `${window.location.origin}/auth/callback`;
       const { error } = await supabase.auth.signUp({
         email: inviteEmail,
-        password: 'TempPassword123!', // They'll need to reset this
+        password: 'TempPassword123!',
         options: {
+          emailRedirectTo: redirectUrl,
           data: {
             first_name: inviteFirstName,
             last_name: inviteLastName,
