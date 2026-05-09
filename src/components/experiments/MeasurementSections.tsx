@@ -16,14 +16,15 @@ export const MeasurementSections = ({ experimentId, onComplete }: MeasurementSec
   const [sections, setSections] = useState<any[]>([]);
 
   const measurementSections = [
-    { type: 'thickness', label: 'Thickness', hasFiles: false },
-    { type: 'uv_vis_nir', label: 'UV-VIS-NIR', hasFiles: true },
-    { type: 'giwaxs', label: 'GIWAXS', hasFiles: true },
-    { type: 'conductivity', label: 'Conductivity', hasFiles: false },
-    { type: 'skpm', label: 'SKPM', hasFiles: true },
-    { type: 'iv', label: 'IV', hasFiles: true },
-    { type: 'profilometry', label: 'Profilometry', hasFiles: true },
-    { type: 'mobility', label: 'Mobility', hasFiles: false },
+    { type: 'thickness', label: 'Thickness', hasFiles: false, hasDataEntry: true },
+    { type: 'uv_vis_nir', label: 'UV-VIS-NIR', hasFiles: true, hasDataEntry: false },
+    { type: 'giwaxs', label: 'GIWAXS', hasFiles: true, hasDataEntry: false },
+    { type: 'conductivity', label: 'Conductivity', hasFiles: false, hasDataEntry: true },
+    { type: 'skpm', label: 'SKPM', hasFiles: true, hasDataEntry: false },
+    { type: 'iv', label: 'IV', hasFiles: true, hasDataEntry: false },
+    { type: 'profilometry', label: 'Profilometry', hasFiles: true, hasDataEntry: false },
+    { type: 'mobility', label: 'Mobility', hasFiles: false, hasDataEntry: true },
+    { type: 'ftir', label: 'FTIR', hasFiles: true, hasDataEntry: true },
   ];
 
   useEffect(() => {
@@ -79,7 +80,7 @@ export const MeasurementSections = ({ experimentId, onComplete }: MeasurementSec
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-4 lg:grid-cols-8 mb-6">
+            <TabsList className="grid grid-cols-5 lg:grid-cols-9 mb-6">
               {measurementSections.map((section) => (
                 <TabsTrigger 
                   key={section.type} 
@@ -97,14 +98,15 @@ export const MeasurementSections = ({ experimentId, onComplete }: MeasurementSec
                   <CardHeader>
                     <CardTitle>{section.label}</CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    {section.hasFiles ? (
-                      <FileUploadSection 
+                  <CardContent className="space-y-6">
+                    {section.hasDataEntry && (
+                      <MeasurementEntryForm 
                         sectionId={getSectionId(section.type)}
                         sectionType={section.type}
                       />
-                    ) : (
-                      <MeasurementEntryForm 
+                    )}
+                    {section.hasFiles && (
+                      <FileUploadSection 
                         sectionId={getSectionId(section.type)}
                         sectionType={section.type}
                       />
