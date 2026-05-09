@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { Upload, FileText, Eye, Download, BarChart3 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PlotViewer } from './PlotViewer';
+import { AIDataParser } from './AIDataParser';
 
 interface FileUploadSectionProps {
   sectionId?: string;
@@ -178,7 +179,7 @@ export const FileUploadSection = ({ sectionId, sectionType }: FileUploadSectionP
               type="file"
               onChange={handleFileUpload}
               disabled={uploading}
-              accept=".csv,.txt,.xlsx,.xls"
+              accept=".csv,.txt,.xlsx,.xls,.json,.dpt,.spa"
             />
             <Button 
               onClick={() => fileInputRef.current?.click()}
@@ -188,7 +189,7 @@ export const FileUploadSection = ({ sectionId, sectionType }: FileUploadSectionP
             </Button>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
-            Maximum file size: 1MB. Supported formats: CSV, TXT, Excel
+            Maximum file size: 1MB. Supported formats: CSV, TXT, Excel, JSON, DPT, SPA
           </p>
         </CardContent>
       </Card>
@@ -218,6 +219,12 @@ export const FileUploadSection = ({ sectionId, sectionType }: FileUploadSectionP
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
+                    <AIDataParser
+                      sectionId={sectionId}
+                      sectionType={sectionType}
+                      file={file}
+                      onMeasurementsAdded={loadFiles}
+                    />
                     {isCSVFile(file.mime_type, file.filename) && (
                       <Button
                         variant="outline"
