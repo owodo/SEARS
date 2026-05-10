@@ -94,7 +94,7 @@ ${fileContent.substring(0, 10000)}`;
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'llama3.2',
+          model: 'llama3.2:1b',
           prompt: prompt,
           stream: false,
           format: 'json',
