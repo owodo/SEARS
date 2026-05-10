@@ -1,4 +1,4 @@
-# Welcome to SEARS v2.
+# Welcome to SEARS v3. AI powered
 
 ## Project info
 
