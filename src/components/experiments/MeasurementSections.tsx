@@ -19,7 +19,7 @@ export const MeasurementSections = ({ experimentId, onComplete }: MeasurementSec
     { type: 'thickness', label: 'Thickness', hasFiles: false, hasDataEntry: true },
     { type: 'uv_vis_nir', label: 'UV-VIS-NIR', hasFiles: true, hasDataEntry: false },
     { type: 'giwaxs', label: 'GIWAXS', hasFiles: true, hasDataEntry: false },
-    { type: 'conductivity', label: 'Conductivity', hasFiles: false, hasDataEntry: true },
+    { type: 'conductivity', label: 'Conductivity', hasFiles: true, hasDataEntry: true },
     { type: 'skpm', label: 'SKPM', hasFiles: true, hasDataEntry: false },
     { type: 'iv', label: 'IV', hasFiles: true, hasDataEntry: false },
     { type: 'profilometry', label: 'Profilometry', hasFiles: true, hasDataEntry: false },
