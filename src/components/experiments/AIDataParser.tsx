@@ -16,29 +16,122 @@ interface ParsedMeasurement {
 interface AIDataParserProps {
   sectionId?: string;
   sectionType: string;
-  file: {
-    id: string;
-    filename: string;
-    file_path: string;
-    mime_type: string;
-  };
+  file: { id: string; filename: string; file_path: string; mime_type: string };
   onMeasurementsAdded?: () => void;
 }
 
 const UNIT_HINTS: Record<string, string> = {
-  thickness: 'nm (nanometers)',
-  conductivity: 'S/cm (siemens per centimeter)',
-  mobility: 'cm²/V·s',
-  ftir: 'cm⁻¹ (wavenumber) for position, % or a.u. for intensity',
-  uv_vis_nir: 'nm for wavelength, a.u. for absorbance',
-  iv: 'V for voltage, mA or A for current',
-  profilometry: 'µm or nm for height/depth',
-  giwaxs: 'Å⁻¹ for q-vector, a.u. for intensity',
-  skpm: 'mV for surface potential',
+  thickness: 'nm', conductivity: 'S/m', mobility: 'cm2/Vs',
+  ftir: 'cm-1', uv_vis_nir: 'nm', iv: 'V',
+  profilometry: 'um', giwaxs: 'A-1', skpm: 'mV',
 };
 
-// Ollama runs locally on your VM — no API key needed
+const COL_KEYWORDS: Record<string, string[]> = {
+  conductivity: ['conductivity', 's/m', 'siemens'],
+  thickness: ['thickness', 'height', 'depth', 'nm'],
+  mobility: ['mobility', 'cm2/v'],
+  ftir: ['wavenumber', 'cm-1', 'absorbance', 'transmittance'],
+  uv_vis_nir: ['wavelength', 'absorbance', 'absorb'],
+  iv: ['current', 'voltage'],
+  profilometry: ['profile', 'step height'],
+  giwaxs: ['q-vector', 'intensity'],
+  skpm: ['potential', 'skpm'],
+};
+
 const OLLAMA_URL = 'http://192.168.64.2:11434';
+
+function parseCSV(content: string, sectionType: string): ParsedMeasurement[] | null {
+  const lines = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim());
+  if (lines.length < 2) return null;
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const keywords = COL_KEYWORDS[sectionType] || [];
+  let col = -1;
+  let unitFromHeader = '';
+  for (let i = 0; i < headers.length; i++) {
+    for (const kw of keywords) {
+      if (headers[i].includes(kw)) {
+        col = i;
+        const m = headers[i].match(/\(([^)]+)\)/);
+        if (m) unitFromHeader = m[1];
+        break;
+      }
+    }
+    if (col >= 0) break;
+  }
+  if (col < 0) {
+    for (let i = headers.length - 1; i >= 0; i--) {
+      const v = lines[1]?.split(',')[i]?.trim();
+      if (v && !isNaN(Number(v))) {
+        col = i;
+        const m = headers[i].match(/\(([^)]+)\)/);
+        if (m) unitFromHeader = m[1];
+        break;
+      }
+    }
+  }
+  if (col < 0) return null;
+  const unit = unitFromHeader || UNIT_HINTS[sectionType] || '';
+  const results: ParsedMeasurement[] = [];
+  const expectedCols = headers.length;
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map(c => c.trim());
+    if (cols.length !== expectedCols) continue;
+    const val = Number(cols[col]);
+    if (isNaN(val)) continue;
+    results.push({
+      value: parseFloat(val.toFixed(6)),
+      unit,
+      batch_number: 'B001',
+      reading_number: `R${String(results.length + 1).padStart(3, '0')}`,
+    });
+  }
+  return results.length > 0 ? results : null;
+}
+
+function parseJSON(content: string, sectionType: string): ParsedMeasurement[] | null {
+  try {
+    const data = JSON.parse(content);
+    const results: ParsedMeasurement[] = [];
+    const wl = data.wavelengths2 || data.wavelengths || data.x;
+    const ab = data.absorb2 || data.absorb || data.y;
+    if (Array.isArray(wl) && Array.isArray(ab)) {
+      const peaks: { wl: number; abs: number }[] = [];
+      for (let i = 1; i < ab.length - 1; i++) {
+        if (ab[i] == null || isNaN(ab[i])) continue;
+        if (ab[i] > ab[i - 1] && ab[i] > ab[i + 1] && ab[i] > 0.1) {
+          peaks.push({ wl: wl[i], abs: ab[i] });
+        }
+      }
+      peaks.sort((a, b) => b.abs - a.abs);
+      const top = peaks.slice(0, 15).sort((a, b) => a.wl - b.wl);
+      for (const p of top) {
+        results.push({
+          value: parseFloat(p.wl.toFixed(2)),
+          unit: 'nm',
+          batch_number: 'B001',
+          reading_number: `R${String(results.length + 1).padStart(3, '0')}`,
+        });
+      }
+      return results.length > 0 ? results : null;
+    }
+    if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object') {
+      const keys = Object.keys(data[0]);
+      const vk = keys[keys.length - 1];
+      for (let i = 0; i < Math.min(data.length, 50); i++) {
+        const val = Number(data[i][vk]);
+        if (isNaN(val)) continue;
+        results.push({
+          value: parseFloat(val.toFixed(6)),
+          unit: UNIT_HINTS[sectionType] || '',
+          batch_number: 'B001',
+          reading_number: `R${String(results.length + 1).padStart(3, '0')}`,
+        });
+      }
+      return results.length > 0 ? results : null;
+    }
+    return null;
+  } catch { return null; }
+}
 
 export const AIDataParser = ({ sectionId, sectionType, file, onMeasurementsAdded }: AIDataParserProps) => {
   const { profile } = useAuth();
@@ -46,258 +139,122 @@ export const AIDataParser = ({ sectionId, sectionType, file, onMeasurementsAdded
   const [parsedData, setParsedData] = useState<ParsedMeasurement[] | null>(null);
   const [inserting, setInserting] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [method, setMethod] = useState('');
 
   const handleParse = async () => {
-    if (!sectionId || !profile) {
-      toast.error('Section not ready or not logged in');
-      return;
-    }
-
-    setParsing(true);
-    setParseError(null);
-    setParsedData(null);
-
+    if (!sectionId || !profile) { toast.error('Not ready'); return; }
+    setParsing(true); setParseError(null); setParsedData(null); setMethod('');
     try {
-      // Step 1: Download the file from Supabase Storage
-      const { data: fileData, error: downloadError } = await supabase.storage
-        .from('experiment-files')
-        .download(file.file_path);
-
-      if (downloadError) throw downloadError;
-
-      const fileContent = await fileData.text();
-
-      // Step 2: Build the prompt
-      const unitHint = UNIT_HINTS[sectionType] || 'use appropriate SI units';
-
-      const prompt = `You are a scientific data parser. Extract measurement data from this instrument file and return ONLY valid JSON — no markdown, no backticks, no explanation.
-
-Return format:
-{"measurements": [{"value": 123.4, "unit": "nm", "batch_number": "B001", "reading_number": "R001"}]}
-
-Rules:
-- For spectral data with many points, extract only KEY FEATURES: peaks, band edges, max/min values. Maximum 20 measurements.
-- For tabular data, extract each row.
-- Expected units for ${sectionType}: ${unitHint}
-- If you find sample/batch identifiers in the file, use them as batch_number.
-- Number readings sequentially: R001, R002, etc.
-- Return ONLY the JSON object, nothing else.
-
-File name: ${file.filename}
-Section type: ${sectionType}
-
-File contents (first 10000 chars):
-${fileContent.substring(0, 10000)}`;
-
-      // Step 3: Call Ollama API locally
-      const ollamaResponse = await fetch(`${OLLAMA_URL}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'llama3.2:1b',
-          prompt: prompt,
-          stream: false,
-          format: 'json',
-          options: {
-            temperature: 0.1,
-            num_predict: 4096,
-          },
-        }),
-      });
-
-      if (!ollamaResponse.ok) {
-        const status = ollamaResponse.status;
-        throw new Error(`Ollama returned status ${status}. Is the model pulled? Run: ollama pull llama3.2`);
+      const { data: fd, error: de } = await supabase.storage.from('experiment-files').download(file.file_path);
+      if (de) throw de;
+      const content = await fd.text();
+      const isCSV = /\.(csv|tsv)$/i.test(file.filename);
+      const isJSON = /\.json$/i.test(file.filename);
+      let results: ParsedMeasurement[] | null = null;
+      if (isCSV) { results = parseCSV(content, sectionType); if (results) setMethod('Smart CSV parser'); }
+      else if (isJSON) { results = parseJSON(content, sectionType); if (results) setMethod('Smart JSON parser'); }
+      if (!results) {
+        setMethod('Ollama AI');
+        const unit = UNIT_HINTS[sectionType] || 'SI units';
+        const prompt = `You are a scientific data parser. Extract ALL data rows from this ${sectionType} file. Return ONLY JSON: {"measurements":[{"value":number,"unit":"string","batch_number":"B001","reading_number":"R001"}]}. Read column headers for correct units. Expected: ${unit}. Extract EVERY row, not summaries. File: ${file.filename}\n\n${content.substring(0, 12000)}`;
+        const resp = await fetch(`${OLLAMA_URL}/api/generate`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: 'llama3.2:1b', prompt, stream: false, format: 'json', options: { temperature: 0.1, num_predict: 8192 } }),
+        });
+        if (!resp.ok) throw new Error('Ollama error. Is it running?');
+        const r = await resp.json();
+        try {
+          const p = JSON.parse((r.response || '').replace(/```json|```/g, '').trim());
+          const m = p.measurements || p.data || [];
+          if (Array.isArray(m) && m.length > 0) {
+            results = m.filter((x: any) => x.value != null && !isNaN(Number(x.value)))
+              .map((x: any, i: number) => ({ value: Number(x.value), unit: String(x.unit || unit), batch_number: String(x.batch_number || 'B001'), reading_number: String(x.reading_number || `R${String(i+1).padStart(3,'0')}`) }));
+          }
+        } catch { setParseError('AI returned unparseable response.'); return; }
       }
-
-      const ollamaResult = await ollamaResponse.json();
-      const responseText = ollamaResult.response || '';
-
-      // Step 4: Parse the JSON response
-      let parsed;
-      try {
-        const cleaned = responseText.replace(/```json|```/g, '').trim();
-        parsed = JSON.parse(cleaned);
-      } catch {
-        console.error('Failed to parse Ollama response:', responseText);
-        setParseError('AI returned unparseable response. Try a smaller or cleaner file.');
-        return;
-      }
-
-      const measurements = parsed.measurements || parsed.data || [];
-
-      if (!Array.isArray(measurements) || measurements.length === 0) {
-        setParseError('No measurements could be extracted from this file.');
-        return;
-      }
-
-      // Validate and clean each measurement
-      const valid = measurements
-        .filter((m: any) => m.value !== undefined && m.value !== null && !isNaN(Number(m.value)))
-        .map((m: any, i: number) => ({
-          value: Number(m.value),
-          unit: String(m.unit || ''),
-          batch_number: String(m.batch_number || 'B001'),
-          reading_number: String(m.reading_number || `R${String(i + 1).padStart(3, '0')}`),
-        }));
-
-      if (valid.length === 0) {
-        setParseError('AI extracted data but no valid numeric measurements were found.');
-        return;
-      }
-
-      setParsedData(valid);
-      toast.success(`AI extracted ${valid.length} measurements`);
-    } catch (error: any) {
-      console.error('Error parsing file:', error);
-      if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
-        setParseError('Cannot connect to Ollama. Make sure it is running: ollama serve');
-      } else {
-        setParseError(error.message || 'Failed to parse file');
-      }
-      toast.error('AI parsing failed');
-    } finally {
-      setParsing(false);
-    }
+      if (!results || results.length === 0) { setParseError('No measurements extracted.'); return; }
+      setParsedData(results);
+      toast.success(`Extracted ${results.length} measurements`);
+    } catch (err: any) {
+      if (err.message?.includes('Failed to fetch')) setParseError('Cannot connect to Ollama.');
+      else setParseError(err.message || 'Parse failed');
+    } finally { setParsing(false); }
   };
 
   const handleInsertAll = async () => {
     if (!parsedData || !sectionId || !profile) return;
-
     setInserting(true);
     try {
-      const rows = parsedData.map((m) => ({
-        section_id: sectionId,
-        scientist_id: profile.id,
-        value: m.value,
-        unit: m.unit,
-        batch_number: m.batch_number,
-        reading_number: m.reading_number,
-      }));
-
+      const rows = parsedData.map(m => ({ section_id: sectionId, scientist_id: profile.id, value: m.value, unit: m.unit, batch_number: m.batch_number, reading_number: m.reading_number }));
       const { error } = await supabase.from('measurements').insert(rows);
-
       if (error) throw error;
-
-      toast.success(`${rows.length} measurements added successfully`);
-      setParsedData(null);
+      toast.success(`${rows.length} measurements added`);
+      setParsedData(null); setMethod('');
       if (onMeasurementsAdded) onMeasurementsAdded();
-    } catch (error: any) {
-      console.error('Error inserting measurements:', error);
-      toast.error(error.message || 'Failed to insert measurements');
-    } finally {
-      setInserting(false);
-    }
+    } catch (err: any) { toast.error(err.message || 'Insert failed'); }
+    finally { setInserting(false); }
   };
 
-  const handleRemoveRow = (index: number) => {
+  const handleRemoveRow = (i: number) => {
     if (!parsedData) return;
-    setParsedData(parsedData.filter((_, i) => i !== index));
+    const u = parsedData.filter((_, idx) => idx !== i);
+    if (u.length === 0) { setParsedData(null); setMethod(''); } else setParsedData(u);
   };
 
-  const handleDiscard = () => {
-    setParsedData(null);
-    setParseError(null);
-  };
+  const handleDiscard = () => { setParsedData(null); setParseError(null); setMethod(''); };
 
   return (
     <div className="inline-flex flex-col">
-      {!parsedData && !parseError && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleParse}
-          disabled={parsing}
-          className="text-purple-600 border-purple-200 hover:bg-purple-50"
-        >
-          {parsing ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-              AI Parsing...
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4 mr-1" />
-              AI Parse
-            </>
-          )}
+      {parsedData === null && parseError === null && (
+        <Button variant="outline" size="sm" onClick={handleParse} disabled={parsing} className="text-purple-600 border-purple-200 hover:bg-purple-50">
+          {parsing ? <><Loader2 className="w-4 h-4 mr-1 animate-spin"/>Parsing...</> : <><Sparkles className="w-4 h-4 mr-1"/>AI Parse</>}
         </Button>
       )}
-
       {parseError && (
         <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg max-w-md">
           <div className="flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
-            <div>
-              <p className="text-sm text-red-700">{parseError}</p>
-              <Button variant="ghost" size="sm" onClick={handleDiscard} className="mt-1 text-xs">
-                Dismiss
-              </Button>
+            <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0"/>
+            <div><p className="text-sm text-red-700">{parseError}</p>
+              <Button variant="ghost" size="sm" onClick={handleDiscard} className="mt-1 text-xs">Try again</Button>
             </div>
           </div>
         </div>
       )}
-
       {parsedData && parsedData.length > 0 && (
         <Card className="mt-3 border-purple-200">
           <CardHeader className="py-3 px-4">
             <CardTitle className="text-sm flex items-center justify-between">
               <span className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-purple-600" />
-                AI Extracted {parsedData.length} Measurements — Review & Confirm
+                <Sparkles className="w-4 h-4 text-purple-600"/>
+                <span>Extracted {parsedData.length} measurements {method && <span className="text-muted-foreground font-normal ml-1">via {method}</span>}</span>
               </span>
               <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  onClick={handleInsertAll}
-                  disabled={inserting}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  {inserting ? (
-                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                  ) : (
-                    <Check className="w-4 h-4 mr-1" />
-                  )}
-                  Insert All
+                <Button size="sm" onClick={handleInsertAll} disabled={inserting} className="bg-green-600 hover:bg-green-700">
+                  {inserting ? <Loader2 className="w-4 h-4 mr-1 animate-spin"/> : <Check className="w-4 h-4 mr-1"/>}Insert All
                 </Button>
-                <Button size="sm" variant="outline" onClick={handleDiscard}>
-                  <X className="w-4 h-4 mr-1" />
-                  Discard
-                </Button>
+                <Button size="sm" variant="outline" onClick={handleDiscard}><X className="w-4 h-4 mr-1"/>Discard</Button>
               </div>
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="max-h-64 overflow-y-auto">
               <table className="w-full text-sm">
-                <thead className="bg-muted/50 sticky top-0">
-                  <tr>
-                    <th className="text-left p-2 font-medium">Value</th>
-                    <th className="text-left p-2 font-medium">Unit</th>
-                    <th className="text-left p-2 font-medium">Batch</th>
-                    <th className="text-left p-2 font-medium">Reading</th>
-                    <th className="p-2 w-8"></th>
+                <thead className="bg-muted/50 sticky top-0"><tr>
+                  <th className="text-left p-2 font-medium">Value</th>
+                  <th className="text-left p-2 font-medium">Unit</th>
+                  <th className="text-left p-2 font-medium">Batch</th>
+                  <th className="text-left p-2 font-medium">Reading</th>
+                  <th className="p-2 w-8"></th>
+                </tr></thead>
+                <tbody>{parsedData.map((m, i) => (
+                  <tr key={i} className="border-t hover:bg-muted/20">
+                    <td className="p-2">{m.value}</td>
+                    <td className="p-2 text-muted-foreground">{m.unit}</td>
+                    <td className="p-2">{m.batch_number}</td>
+                    <td className="p-2">{m.reading_number}</td>
+                    <td className="p-2"><button onClick={() => handleRemoveRow(i)} className="text-muted-foreground hover:text-red-500"><X className="w-3 h-3"/></button></td>
                   </tr>
-                </thead>
-                <tbody>
-                  {parsedData.map((m, i) => (
-                    <tr key={i} className="border-t hover:bg-muted/20">
-                      <td className="p-2">{m.value}</td>
-                      <td className="p-2 text-muted-foreground">{m.unit}</td>
-                      <td className="p-2">{m.batch_number}</td>
-                      <td className="p-2">{m.reading_number}</td>
-                      <td className="p-2">
-                        <button
-                          onClick={() => handleRemoveRow(i)}
-                          className="text-muted-foreground hover:text-red-500"
-                          title="Remove this row"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
+                ))}</tbody>
               </table>
             </div>
           </CardContent>
