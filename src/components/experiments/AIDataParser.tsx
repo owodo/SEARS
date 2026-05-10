@@ -38,7 +38,7 @@ const UNIT_HINTS: Record<string, string> = {
 };
 
 // Ollama runs locally on your VM — no API key needed
-const OLLAMA_URL = 'http://localhost:11434';
+const OLLAMA_URL = 'http://192.168.64.2:11434';
 
 export const AIDataParser = ({ sectionId, sectionType, file, onMeasurementsAdded }: AIDataParserProps) => {
   const { profile } = useAuth();
