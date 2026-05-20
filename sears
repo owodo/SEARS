@@ -1,0 +1,408 @@
+#!/usr/bin/env python3
+"""
+SEARS CLI — Direct command-line access to SEARS database.
+
+Install:
+    chmod +x sears
+    sudo mv sears /usr/local/bin/
+    pip install requests
+
+Usage:
+    sears login
+    sears whoami
+    sears experiments list
+    sears experiments show <experiment-id>
+    sears upload <experiment-id> <section-type> <file> [--batch B001] [--dry-run]
+    sears add <section-id> --value 123.4 --unit nm --batch B001 --reading R001
+    sears logout
+"""
+
+import argparse
+import csv
+import getpass
+import io
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+try:
+    import requests
+except ImportError:
+    sys.exit("Missing dependency. Run: pip install requests")
+
+# ============================================
+# CONFIGURATION — update these for your project
+# ============================================
+SUPABASE_URL = "https://uhijldtfhcfujwrzhzfa.supabase.co"
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVoaWpsZHRmaGNmdWp3cnpoemZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA3ODk0OTEsImV4cCI6MjA4NjM2NTQ5MX0.gDSMOy6JONRybGrz2UPqZGp8nUUG9810WtkF63KUUP4"  
+
+CONFIG_DIR = Path.home() / ".sears"
+CONFIG_FILE = CONFIG_DIR / "config.json"
+
+UNIT_HINTS = {
+    "thickness": "nm",
+    "conductivity": "S/m",
+    "mobility": "cm2/Vs",
+    "ftir": "cm-1",
+    "uv_vis_nir": "nm",
+    "iv": "V",
+    "profilometry": "um",
+    "giwaxs": "A-1",
+    "skpm": "mV",
+}
+
+COL_KEYWORDS = {
+    "conductivity": ["conductivity", "s/m", "siemens"],
+    "thickness": ["thickness", "height", "depth", "nm"],
+    "mobility": ["mobility", "cm2/v"],
+    "ftir": ["wavenumber", "cm-1", "absorbance", "transmittance"],
+    "uv_vis_nir": ["wavelength", "absorbance", "absorb"],
+    "iv": ["current", "voltage"],
+    "profilometry": ["profile", "step height"],
+    "giwaxs": ["q-vector", "intensity"],
+    "skpm": ["potential", "skpm"],
+}
+
+# ============================================
+# Auth + config
+# ============================================
+def load_config():
+    if not CONFIG_FILE.exists():
+        return {}
+    try:
+        return json.loads(CONFIG_FILE.read_text())
+    except Exception:
+        return {}
+
+def save_config(cfg):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+    os.chmod(CONFIG_FILE, 0o600)  # Owner read/write only
+
+def get_token():
+    cfg = load_config()
+    token = cfg.get("access_token")
+    if not token:
+        sys.exit("Not logged in. Run: sears login")
+    return token
+
+def auth_headers():
+    return {
+        "Authorization": f"Bearer {get_token()}",
+        "apikey": SUPABASE_ANON_KEY,
+        "Content-Type": "application/json",
+    }
+
+# ============================================
+# Commands
+# ============================================
+def cmd_login(args):
+    email = input("Email: ").strip()
+    password = getpass.getpass("Password: ")
+    r = requests.post(
+        f"{SUPABASE_URL}/auth/v1/token?grant_type=password",
+        headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+        json={"email": email, "password": password},
+    )
+    if not r.ok:
+        sys.exit(f"Login failed: {r.json().get('error_description', r.text)}")
+    data = r.json()
+    save_config({
+        "access_token": data["access_token"],
+        "refresh_token": data["refresh_token"],
+        "user_id": data["user"]["id"],
+        "email": data["user"]["email"],
+    })
+    print(f"✓ Logged in as {data['user']['email']}")
+
+def cmd_logout(args):
+    if CONFIG_FILE.exists():
+        CONFIG_FILE.unlink()
+    print("✓ Logged out")
+
+def cmd_whoami(args):
+    cfg = load_config()
+    if not cfg.get("access_token"):
+        sys.exit("Not logged in.")
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/profiles?user_id=eq.{cfg['user_id']}&select=*",
+        headers=auth_headers(),
+    )
+    if not r.ok:
+        sys.exit(f"Failed to fetch profile: {r.text}")
+    profiles = r.json()
+    if not profiles:
+        sys.exit("No profile found for this user.")
+    p = profiles[0]
+    print(f"Email:    {p.get('email')}")
+    print(f"Name:     {p.get('first_name')} {p.get('last_name')}")
+    print(f"Role:     {p.get('role')}")
+    print(f"Lab ID:   {p.get('lab_id')}")
+    print(f"User ID:  {p.get('user_id')}")
+
+def cmd_experiments_list(args):
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/experiments?select=id,status,created_at,metadata&order=created_at.desc&limit=50",
+        headers=auth_headers(),
+    )
+    if not r.ok:
+        sys.exit(f"Failed: {r.text}")
+    exps = r.json()
+    if not exps:
+        print("No experiments found.")
+        return
+    print(f"{'ID':<38} {'STATUS':<10} {'TITLE':<40} {'CREATED':<10}")
+    print("-" * 100)
+    for e in exps:
+        title = (e.get("metadata") or {}).get("title", "(no title)")[:38]
+        created = (e.get("created_at") or "")[:10]
+        print(f"{e['id']:<38} {e.get('status', ''):<10} {title:<40} {created}")
+
+def cmd_experiments_show(args):
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/experiments?id=eq.{args.experiment_id}&select=*,measurement_sections(*)",
+        headers=auth_headers(),
+    )
+    if not r.ok:
+        sys.exit(f"Failed: {r.text}")
+    exps = r.json()
+    if not exps:
+        sys.exit("Experiment not found.")
+    e = exps[0]
+    print(f"ID:         {e['id']}")
+    print(f"Status:     {e.get('status')}")
+    print(f"Created:    {e.get('created_at')}")
+    print(f"Metadata:   {json.dumps(e.get('metadata') or {}, indent=2)}")
+    print(f"\nMeasurement Sections:")
+    for s in e.get("measurement_sections", []):
+        print(f"  {s['id']}  [{s['section_type']}]")
+
+def get_section_id(experiment_id, section_type):
+    r = requests.get(
+        f"{SUPABASE_URL}/rest/v1/measurement_sections"
+        f"?experiment_id=eq.{experiment_id}&section_type=eq.{section_type}&select=id",
+        headers=auth_headers(),
+    )
+    if not r.ok or not r.json():
+        sys.exit(f"No section '{section_type}' found in experiment {experiment_id}")
+    return r.json()[0]["id"]
+
+# ============================================
+# File parsers (same logic as AIDataParser.tsx)
+# ============================================
+def parse_csv(content, section_type, batch):
+    lines = [l for l in content.replace("\r\n", "\n").replace("\r", "\n").split("\n") if l.strip()]
+    if len(lines) < 2:
+        return None
+    headers = [h.strip().lower() for h in lines[0].split(",")]
+    keywords = COL_KEYWORDS.get(section_type, [])
+    col = -1
+    unit = ""
+    for i, h in enumerate(headers):
+        if any(kw in h for kw in keywords):
+            col = i
+            m = re.search(r"\(([^)]+)\)", h)
+            if m:
+                unit = m.group(1)
+            break
+    if col < 0:
+        # Fallback: last numeric column
+        for i in range(len(headers) - 1, -1, -1):
+            cells = lines[1].split(",")
+            if i < len(cells):
+                try:
+                    float(cells[i].strip())
+                    col = i
+                    m = re.search(r"\(([^)]+)\)", headers[i])
+                    if m:
+                        unit = m.group(1)
+                    break
+                except ValueError:
+                    pass
+    if col < 0:
+        return None
+    if not unit:
+        unit = UNIT_HINTS.get(section_type, "")
+    rows = []
+    for line in lines[1:]:
+        cells = [c.strip() for c in line.split(",")]
+        if len(cells) != len(headers):
+            continue
+        try:
+            val = float(cells[col])
+        except ValueError:
+            continue
+        rows.append({
+            "value": round(val, 6),
+            "unit": unit,
+            "batch_number": batch,
+            "reading_number": f"R{len(rows)+1:03d}",
+        })
+    return rows or None
+
+def parse_json(content, section_type, batch):
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    rows = []
+    wl = data.get("wavelengths2") or data.get("wavelengths") or data.get("x")
+    ab = data.get("absorb2") or data.get("absorb") or data.get("y")
+    if isinstance(wl, list) and isinstance(ab, list):
+        peaks = []
+        for i in range(1, len(ab) - 1):
+            v = ab[i]
+            if v is None or (isinstance(v, float) and v != v):  # NaN
+                continue
+            if v > ab[i-1] and v > ab[i+1] and v > 0.1:
+                peaks.append((wl[i], v))
+        peaks.sort(key=lambda p: p[1], reverse=True)
+        top = sorted(peaks[:15], key=lambda p: p[0])
+        for w, _ in top:
+            rows.append({
+                "value": round(w, 2),
+                "unit": "nm",
+                "batch_number": batch,
+                "reading_number": f"R{len(rows)+1:03d}",
+            })
+        return rows or None
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        keys = list(data[0].keys())
+        vk = keys[-1]
+        for item in data[:100]:
+            try:
+                val = float(item[vk])
+            except (ValueError, KeyError, TypeError):
+                continue
+            rows.append({
+                "value": round(val, 6),
+                "unit": UNIT_HINTS.get(section_type, ""),
+                "batch_number": batch,
+                "reading_number": f"R{len(rows)+1:03d}",
+            })
+        return rows or None
+    return None
+
+def cmd_upload(args):
+    cfg = load_config()
+    section_id = get_section_id(args.experiment_id, args.section_type)
+    
+    path = Path(args.file)
+    if not path.exists():
+        sys.exit(f"File not found: {path}")
+    content = path.read_text(encoding="utf-8", errors="replace")
+    
+    ext = path.suffix.lower()
+    if ext in (".csv", ".tsv"):
+        rows = parse_csv(content, args.section_type, args.batch)
+        method = "CSV parser"
+    elif ext == ".json":
+        rows = parse_json(content, args.section_type, args.batch)
+        method = "JSON parser"
+    else:
+        sys.exit(f"Unsupported file type: {ext}. Use .csv, .tsv, or .json")
+    
+    if not rows:
+        sys.exit("No measurements could be extracted from the file.")
+    
+    # Get the user's profile.id (not user_id) for scientist_id
+    pr = requests.get(
+        f"{SUPABASE_URL}/rest/v1/profiles?user_id=eq.{cfg['user_id']}&select=id",
+        headers=auth_headers(),
+    )
+    profile_id = pr.json()[0]["id"]
+    
+    # Show preview
+    print(f"\n[{method}] Extracted {len(rows)} measurements:")
+    print(f"{'#':<4} {'VALUE':<15} {'UNIT':<10} {'BATCH':<10} {'READING':<10}")
+    print("-" * 55)
+    for i, r in enumerate(rows[:10]):
+        print(f"{i+1:<4} {r['value']:<15} {r['unit']:<10} {r['batch_number']:<10} {r['reading_number']:<10}")
+    if len(rows) > 10:
+        print(f"... and {len(rows) - 10} more")
+    
+    if args.dry_run:
+        print("\nDry run — nothing inserted.")
+        return
+    
+    # Confirm
+    confirm = input(f"\nInsert {len(rows)} measurements into the database? [y/N]: ")
+    if confirm.lower() != "y":
+        print("Cancelled.")
+        return
+    
+    # Insert
+    payload = [{**r, "section_id": section_id, "scientist_id": profile_id} for r in rows]
+    r = requests.post(
+        f"{SUPABASE_URL}/rest/v1/measurements",
+        headers={**auth_headers(), "Prefer": "return=minimal"},
+        json=payload,
+    )
+    if not r.ok:
+        sys.exit(f"Insert failed: {r.text}")
+    print(f"✓ Inserted {len(rows)} measurements")
+
+def cmd_add(args):
+    cfg = load_config()
+    pr = requests.get(
+        f"{SUPABASE_URL}/rest/v1/profiles?user_id=eq.{cfg['user_id']}&select=id",
+        headers=auth_headers(),
+    )
+    profile_id = pr.json()[0]["id"]
+    payload = {
+        "section_id": args.section_id,
+        "scientist_id": profile_id,
+        "value": args.value,
+        "unit": args.unit,
+        "batch_number": args.batch,
+        "reading_number": args.reading,
+    }
+    r = requests.post(
+        f"{SUPABASE_URL}/rest/v1/measurements",
+        headers={**auth_headers(), "Prefer": "return=minimal"},
+        json=payload,
+    )
+    if not r.ok:
+        sys.exit(f"Insert failed: {r.text}")
+    print(f"✓ Added: {args.value} {args.unit} (batch {args.batch}, reading {args.reading})")
+
+# ============================================
+# CLI setup
+# ============================================
+def main():
+    p = argparse.ArgumentParser(prog="sears", description="SEARS command-line interface")
+    sp = p.add_subparsers(dest="command", required=True)
+
+    sp.add_parser("login", help="Log in to SEARS").set_defaults(func=cmd_login)
+    sp.add_parser("logout", help="Log out").set_defaults(func=cmd_logout)
+    sp.add_parser("whoami", help="Show current user").set_defaults(func=cmd_whoami)
+
+    exp = sp.add_parser("experiments", help="Manage experiments").add_subparsers(dest="sub", required=True)
+    exp.add_parser("list", help="List experiments").set_defaults(func=cmd_experiments_list)
+    es = exp.add_parser("show", help="Show experiment details")
+    es.add_argument("experiment_id")
+    es.set_defaults(func=cmd_experiments_show)
+
+    up = sp.add_parser("upload", help="Upload data file to a measurement section")
+    up.add_argument("experiment_id")
+    up.add_argument("section_type", choices=list(UNIT_HINTS.keys()))
+    up.add_argument("file")
+    up.add_argument("--batch", default="B001", help="Batch number (default: B001)")
+    up.add_argument("--dry-run", action="store_true", help="Preview without inserting")
+    up.set_defaults(func=cmd_upload)
+
+    ad = sp.add_parser("add", help="Add a single measurement manually")
+    ad.add_argument("section_id")
+    ad.add_argument("--value", type=float, required=True)
+    ad.add_argument("--unit", required=True)
+    ad.add_argument("--batch", required=True)
+    ad.add_argument("--reading", required=True)
+    ad.set_defaults(func=cmd_add)
+
+    args = p.parse_args()
+    args.func(args)
+
+if __name__ == "__main__":
+    main()
