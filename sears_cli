@@ -36,7 +36,7 @@ except ImportError:
 # CONFIGURATION — update these for your project
 # ============================================
 SUPABASE_URL = "https://uhijldtfhcfujwrzhzfa.supabase.co"
-SUPABASE_ANON_KEY = "YOUR_ANON_KEY_HERE"  # Same key as src/integrations/supabase/client.ts
+SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVoaWpsZHRmaGNmdWp3cnpoemZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA3ODk0OTEsImV4cCI6MjA4NjM2NTQ5MX0.gDSMOy6JONRybGrz2UPqZGp8nUUG9810WtkF63KUUP4"
 
 CONFIG_DIR = Path.home() / ".sears"
 CONFIG_FILE = CONFIG_DIR / "config.json"
