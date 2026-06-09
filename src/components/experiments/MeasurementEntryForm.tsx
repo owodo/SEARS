@@ -114,7 +114,7 @@ export const MeasurementEntryForm = ({ sectionId, sectionType }: MeasurementEntr
           batch_number: data.batch_number,
           reading_number: data.reading_number,
           unit: data.unit,
-        }, { });
+        }, { onConflict: ['section_id', 'batch_number', 'reading_number'] });
 
       if (error) throw error;
 
@@ -214,50 +214,7 @@ export const MeasurementEntryForm = ({ sectionId, sectionType }: MeasurementEntr
         </CardContent>
       </Card>
 
-      {/* Existing Measurements */}
-      {measurements.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Recorded Measurements ({measurements.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {measurements.map((measurement) => (
-                <div 
-                  key={measurement.id} 
-                  className="flex items-center justify-between p-4 border rounded-lg bg-muted/30"
-                >
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 flex-1">
-                    <div>
-                      <p className="text-sm font-medium">Value</p>
-                      <p className="text-lg">
-                        {measurement.value} {measurement.unit}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Batch</p>
-                      <p>{measurement.batch_number}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Reading</p>
-                      <p>{measurement.reading_number}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">Recorded by</p>
-                      <p>
-                        {measurement.profiles?.first_name} {measurement.profiles?.last_name}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(measurement.created_at).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Measurements are now displayed by MeasurementsList in MeasurementSections */}
     </div>
   );
 };
