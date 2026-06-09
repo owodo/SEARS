@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { MeasurementEntryForm } from './MeasurementEntryForm';
 import { FileUploadSection } from './FileUploadSection';
+import { MeasurementsList } from './MeasurementsList';
 
 interface MeasurementSectionsProps {
   experimentId: string;
@@ -16,15 +17,14 @@ export const MeasurementSections = ({ experimentId, onComplete }: MeasurementSec
   const [sections, setSections] = useState<any[]>([]);
 
   const measurementSections = [
-    { type: 'thickness', label: 'Thickness', hasFiles: false, hasDataEntry: true },
-    { type: 'uv_vis_nir', label: 'UV-VIS-NIR', hasFiles: true, hasDataEntry: false },
-    { type: 'giwaxs', label: 'GIWAXS', hasFiles: true, hasDataEntry: false },
-    { type: 'conductivity', label: 'Conductivity', hasFiles: true, hasDataEntry: true },
-    { type: 'skpm', label: 'SKPM', hasFiles: true, hasDataEntry: false },
-    { type: 'iv', label: 'IV', hasFiles: true, hasDataEntry: false },
-    { type: 'profilometry', label: 'Profilometry', hasFiles: true, hasDataEntry: false },
-    { type: 'mobility', label: 'Mobility', hasFiles: false, hasDataEntry: true },
-    { type: 'ftir', label: 'FTIR', hasFiles: true, hasDataEntry: true },
+    { type: 'thickness', label: 'Thickness', hasFiles: false },
+    { type: 'uv_vis_nir', label: 'UV-VIS-NIR', hasFiles: true },
+    { type: 'giwaxs', label: 'GIWAXS', hasFiles: true },
+    { type: 'conductivity', label: 'Conductivity', hasFiles: false },
+    { type: 'skpm', label: 'SKPM', hasFiles: true },
+    { type: 'iv', label: 'IV', hasFiles: true },
+    { type: 'profilometry', label: 'Profilometry', hasFiles: true },
+    { type: 'mobility', label: 'Mobility', hasFiles: false },
   ];
 
   useEffect(() => {
@@ -80,7 +80,7 @@ export const MeasurementSections = ({ experimentId, onComplete }: MeasurementSec
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-5 lg:grid-cols-9 mb-6">
+            <TabsList className="grid grid-cols-4 lg:grid-cols-8 mb-6">
               {measurementSections.map((section) => (
                 <TabsTrigger 
                   key={section.type} 
@@ -94,25 +94,35 @@ export const MeasurementSections = ({ experimentId, onComplete }: MeasurementSec
 
             {measurementSections.map((section) => (
               <TabsContent key={section.type} value={section.type}>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{section.label}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    {section.hasDataEntry && (
-                      <MeasurementEntryForm 
-                        sectionId={getSectionId(section.type)}
-                        sectionType={section.type}
-                      />
-                    )}
-                    {section.hasFiles && (
-                      <FileUploadSection 
-                        sectionId={getSectionId(section.type)}
-                        sectionType={section.type}
-                      />
-                    )}
-                  </CardContent>
-                </Card>
+                <div className="space-y-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{section.label}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {/* Manual entry form — only for data-entry sections */}
+                      {!section.hasFiles && (
+                        <MeasurementEntryForm
+                          sectionId={getSectionId(section.type)}
+                          sectionType={section.type}
+                        />
+                      )}
+                      {/* File upload — only for file sections */}
+                      {section.hasFiles && (
+                        <FileUploadSection
+                          sectionId={getSectionId(section.type)}
+                          sectionType={section.type}
+                        />
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Measurements list — shown on ALL sections regardless of type */}
+                  <MeasurementsList
+                    sectionId={getSectionId(section.type)}
+                    sectionType={section.type}
+                  />
+                </div>
               </TabsContent>
             ))}
           </Tabs>
