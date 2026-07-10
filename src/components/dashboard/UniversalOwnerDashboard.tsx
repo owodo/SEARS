@@ -8,6 +8,8 @@ import { Separator } from '@/components/ui/separator';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -23,7 +25,8 @@ import {
   ShieldOff,
   Mail,
   Calendar,
-  Activity
+  Activity,
+  Plus
 } from 'lucide-react';
 
 interface SystemStats {
@@ -58,10 +61,24 @@ export const UniversalOwnerDashboard = () => {
   });
   const [labs, setLabs] = useState<LabData[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Invite lab owner
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteFirstName, setInviteFirstName] = useState('');
   const [inviteLastName, setInviteLastName] = useState('');
+  const [inviteLabId, setInviteLabId] = useState('');
   const [isInviting, setIsInviting] = useState(false);
+
+  // Create lab
+  const [createLabOpen, setCreateLabOpen] = useState(false);
+  const [newLabName, setNewLabName] = useState('');
+  const [newLabDescription, setNewLabDescription] = useState('');
+  const [isCreatingLab, setIsCreatingLab] = useState(false);
+
+  // Labs that don't have an owner yet — only these can receive an invite
+  const labsWithoutOwner = labs.filter(
+    (l) => !l.owner_email || l.owner_email === 'No owner assigned'
+  );
 
   useEffect(() => {
     fetchSystemStats();
@@ -114,7 +131,8 @@ export const UniversalOwnerDashboard = () => {
     try {
       setLoading(true);
       
-      // Get labs with owner information
+      // LEFT JOIN so labs with no owner yet are still returned.
+      // (An inner join silently hid every ownerless lab.)
       const { data: labsData, error } = await supabase
         .from('labs')
         .select(`
@@ -123,14 +141,14 @@ export const UniversalOwnerDashboard = () => {
           description,
           is_active,
           created_at,
-          profiles!inner (
+          profiles (
             first_name,
             last_name,
             email,
             role
           )
         `)
-        .eq('profiles.role', 'lab_owner');
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
 
@@ -150,14 +168,25 @@ export const UniversalOwnerDashboard = () => {
             .select('*', { count: 'exact', head: true })
             .eq('lab_id', lab.id);
 
+          // profiles may be an array (left join), a single object, or null.
+          // Find the lab_owner among them; there may be none yet.
+          const profileList = Array.isArray(lab.profiles)
+            ? lab.profiles
+            : lab.profiles
+            ? [lab.profiles]
+            : [];
+          const owner = profileList.find((p: any) => p?.role === 'lab_owner');
+
           return {
             id: lab.id,
             name: lab.name,
             description: lab.description,
             is_active: lab.is_active,
             created_at: lab.created_at,
-            owner_name: `${lab.profiles.first_name} ${lab.profiles.last_name}`,
-            owner_email: lab.profiles.email,
+            owner_name: owner
+              ? `${owner.first_name} ${owner.last_name}`.trim()
+              : 'No owner assigned',
+            owner_email: owner ? owner.email : '',
             scientists_count: scientistsCount || 0,
             experiments_count: experimentsCount || 0,
             storage_used: (experimentsCount || 0) * 50 // Estimate
@@ -174,57 +203,73 @@ export const UniversalOwnerDashboard = () => {
     }
   };
 
+  const createLab = async () => {
+    if (!newLabName.trim()) {
+      toast.error('Lab name is required');
+      return;
+    }
+
+    setIsCreatingLab(true);
+    try {
+      const { data, error } = await supabase
+        .from('labs')
+        .insert({
+          name: newLabName.trim(),
+          description: newLabDescription.trim() || null,
+          is_active: true,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast.success(`Lab "${data.name}" created. Now invite a lab owner for it.`);
+      setNewLabName('');
+      setNewLabDescription('');
+      setCreateLabOpen(false);
+      await fetchLabsData();
+      await fetchSystemStats();
+    } catch (error: any) {
+      console.error('Error creating lab:', error);
+      toast.error(error.message || 'Failed to create lab');
+    } finally {
+      setIsCreatingLab(false);
+    }
+  };
+
   const inviteLabOwner = async () => {
     if (!inviteEmail || !inviteFirstName || !inviteLastName) {
       toast.error('Please fill in all fields');
       return;
     }
+    if (!inviteLabId) {
+      toast.error('Select which lab this owner will manage');
+      return;
+    }
 
     setIsInviting(true);
     try {
-      // First create the user account
-      const { error: signUpError } = await supabase.auth.signUp({
-        email: inviteEmail,
-        password: 'TempPassword123!', // They'll need to reset this
-        options: {
-          data: {
-            first_name: inviteFirstName,
-            last_name: inviteLastName,
-            role: 'lab_owner'
-          }
-        }
-      });
-
-      if (signUpError) throw signUpError;
-
-      // Send invitation email
-      const { data: { user } } = await supabase.auth.getUser();
-      const inviterName = `${user?.user_metadata?.first_name || ''} ${user?.user_metadata?.last_name || ''}`.trim() || 'Admin';
-      const loginUrl = window.location.origin + '/auth';
-
-      const { error: emailError } = await supabase.functions.invoke('send-invitation', {
+      // Edge function uses the Admin API server-side, so the universal
+      // owner's own session is never replaced (the old signUp() bug).
+      const { data, error } = await supabase.functions.invoke('invite-lab-owner', {
         body: {
           email: inviteEmail,
           firstName: inviteFirstName,
           lastName: inviteLastName,
-          role: 'lab_owner',
-          inviterName,
-          loginUrl
-        }
+          labId: inviteLabId,
+        },
       });
 
-      if (emailError) {
-        console.error('Email sending failed:', emailError);
-        toast.error('Account created but email invitation failed to send. Please inform the user manually.');
-      } else {
-        toast.success('Lab owner invitation sent successfully');
-      }
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
+      toast.success(data?.message || 'Lab owner invited successfully');
       setInviteEmail('');
       setInviteFirstName('');
       setInviteLastName('');
-      fetchLabsData();
-      fetchSystemStats();
+      setInviteLabId('');
+      await fetchLabsData();
+      await fetchSystemStats();
     } catch (error: any) {
       console.error('Error inviting lab owner:', error);
       toast.error(error.message || 'Failed to invite lab owner');
@@ -343,6 +388,72 @@ export const UniversalOwnerDashboard = () => {
         </Card>
       </div>
 
+      {/* Create Lab */}
+      <Card className="shadow-card">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="flex items-center space-x-2">
+            <Building2 className="w-5 h-5 text-primary" />
+            <span>Labs</span>
+          </CardTitle>
+          <Dialog open={createLabOpen} onOpenChange={setCreateLabOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="w-4 h-4 mr-2" />
+                Create Lab
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create a New Lab</DialogTitle>
+                <DialogDescription>
+                  Create the lab first, then invite a lab owner to manage it.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div>
+                  <Label htmlFor="labName">Lab Name *</Label>
+                  <Input
+                    id="labName"
+                    placeholder="Wodo Materials Lab"
+                    value={newLabName}
+                    onChange={(e) => setNewLabName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="labDescription">Description</Label>
+                  <Textarea
+                    id="labDescription"
+                    placeholder="Polymer and material science research"
+                    value={newLabDescription}
+                    onChange={(e) => setNewLabDescription(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setCreateLabOpen(false)}
+                  disabled={isCreatingLab}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={createLab} disabled={isCreatingLab}>
+                  {isCreatingLab ? 'Creating...' : 'Create Lab'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            {labs.length === 0
+              ? 'No labs yet. Create one to get started.'
+              : `${labs.length} lab${labs.length === 1 ? '' : 's'} · ${labsWithoutOwner.length} awaiting an owner`}
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Invite Lab Owner */}
       <Card className="shadow-card">
         <CardHeader>
@@ -352,45 +463,68 @@ export const UniversalOwnerDashboard = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="owner@example.com"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-              />
+          {labsWithoutOwner.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {labs.length === 0
+                ? 'Create a lab first, then you can invite an owner for it.'
+                : 'Every lab already has an owner. Create a new lab to invite another.'}
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div>
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="owner@example.com"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="firstName">First Name</Label>
+                <Input
+                  id="firstName"
+                  placeholder="John"
+                  value={inviteFirstName}
+                  onChange={(e) => setInviteFirstName(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="lastName">Last Name</Label>
+                <Input
+                  id="lastName"
+                  placeholder="Doe"
+                  value={inviteLastName}
+                  onChange={(e) => setInviteLastName(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="labSelect">Assign to Lab</Label>
+                <Select value={inviteLabId} onValueChange={setInviteLabId}>
+                  <SelectTrigger id="labSelect">
+                    <SelectValue placeholder="Select a lab" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {labsWithoutOwner.map((lab) => (
+                      <SelectItem key={lab.id} value={lab.id}>
+                        {lab.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end">
+                <Button
+                  onClick={inviteLabOwner}
+                  disabled={isInviting}
+                  className="w-full"
+                >
+                  {isInviting ? 'Inviting...' : 'Send Invitation'}
+                </Button>
+              </div>
             </div>
-            <div>
-              <Label htmlFor="firstName">First Name</Label>
-              <Input
-                id="firstName"
-                placeholder="John"
-                value={inviteFirstName}
-                onChange={(e) => setInviteFirstName(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="lastName">Last Name</Label>
-              <Input
-                id="lastName"
-                placeholder="Doe"
-                value={inviteLastName}
-                onChange={(e) => setInviteLastName(e.target.value)}
-              />
-            </div>
-            <div className="flex items-end">
-              <Button 
-                onClick={inviteLabOwner} 
-                disabled={isInviting}
-                className="w-full"
-              >
-                {isInviting ? 'Sending...' : 'Send Invitation'}
-              </Button>
-            </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 
