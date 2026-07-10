@@ -4,7 +4,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
-import { UniversalOwnerDashboard } from './UniversalOwnerDashboard';
 import { LabOwnerDashboard } from './LabOwnerDashboard';
 import { 
   FlaskConical, 
