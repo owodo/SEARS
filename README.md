@@ -2,7 +2,7 @@
 
 ## Project info
 
-**URL**: https://sears-v2.vercel.app/
+**URL**: https://sears-ub.us
 
 
 
