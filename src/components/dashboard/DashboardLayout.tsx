@@ -123,6 +123,15 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                       </Badge>
                     </div>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate('/profile')}
+                    className="transition-smooth"
+                  >
+                    <Settings className="w-4 h-4 mr-2" />
+                    Settings
+                  </Button>
                   <Button 
                     variant="outline" 
                     size="sm" 
