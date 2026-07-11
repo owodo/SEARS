@@ -5,10 +5,11 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 import { Loader2, Beaker } from 'lucide-react';
 
 export const AuthForm = () => {
-  const currentYear = new Date().getFullYear();
   const { signIn, signUp, loading, profile } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -18,6 +19,36 @@ export const AuthForm = () => {
     lastName: '',
     confirmPassword: ''
   });
+
+  // Forgot-password flow
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [sendingReset, setSendingReset] = useState(false);
+
+  const handleForgotPassword = async () => {
+    if (!forgotEmail) {
+      toast.error('Please enter your email address');
+      return;
+    }
+    setSendingReset(true);
+    try {
+      // Supabase emails a reset link that returns the user to /reset-password
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      toast.success(
+        'If an account exists for that email, a password reset link has been sent. Check your inbox.'
+      );
+      setShowForgot(false);
+      setForgotEmail('');
+    } catch (err: any) {
+      console.error('Reset request failed:', err);
+      toast.error(err.message || 'Failed to send reset email');
+    } finally {
+      setSendingReset(false);
+    }
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,7 +119,16 @@ export const AuthForm = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">Password</Label>
+                    <button
+                      type="button"
+                      onClick={() => setShowForgot((s) => !s)}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
                   <Input
                     id="password"
                     name="password"
@@ -99,6 +139,30 @@ export const AuthForm = () => {
                     className="transition-smooth focus:shadow-glow"
                   />
                 </div>
+
+                {showForgot && (
+                  <div className="space-y-2 rounded-md border border-border bg-muted/40 p-3">
+                    <Label htmlFor="forgotEmail" className="text-sm">
+                      Enter your email to receive a reset link
+                    </Label>
+                    <Input
+                      id="forgotEmail"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleForgotPassword}
+                      disabled={sendingReset}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      {sendingReset ? 'Sending...' : 'Send Reset Link'}
+                    </Button>
+                  </div>
+                )}
                 <Button 
                   type="submit" 
                   className="w-full bg-gradient-primary hover:shadow-glow transition-bounce" 
@@ -201,8 +265,8 @@ export const AuthForm = () => {
         </CardContent>
       </Card>
       <footer className="w-full text-center py-4 text-muted-foreground text-sm border-t mt-8">
-  <img src="/watermark-logo.png" alt="SEARSv2 Logo (SEARSv2)" className="mx-auto mb-2 h-16 opacity-90" />
-        &copy; Iowa State University {currentYear}
+        <img src="/watermark-logo.png" alt="SEARS Logo" className="mx-auto mb-2 h-16 opacity-90" />
+        &copy; Iowa State University & University at Buffalo {new Date().getFullYear()}
       </footer>
     </div>
   );
