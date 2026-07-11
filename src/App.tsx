@@ -17,6 +17,8 @@ import Admin from "./pages/Admin";
 import Labs from "./pages/Labs";
 import ExperimentDetails from "./pages/ExperimentDetails";
 import AuthCallback from "./pages/AuthCallback";
+import Profile from "./pages/Profile";
+import ResetPassword from "./pages/ResetPassword";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +42,8 @@ const App = () => (
             <Route path="/messages" element={<Messages />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/labs" element={<Labs />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
