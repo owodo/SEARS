@@ -162,7 +162,7 @@ const Index = () => {
           <div className="w-full text-center py-4">
             <img src="/watermark-logo.png" alt="Watermark Logo" className="mx-auto mb-2 h-20 opacity-60" />
             <div className="text-muted-foreground text-sm border-t pt-4">
-              &copy; Iowa State University {currentYear}
+              &copy; Iowa State University & University at Buffalo {currentYear}
             </div>
           </div>
         </div>
