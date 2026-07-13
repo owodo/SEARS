@@ -12,7 +12,7 @@ const ExperimentDetails = () => {
     </DashboardLayout>
   );
     <footer className="w-full text-center py-4 text-muted-foreground text-sm border-t mt-8">
-      &copy; Iowa State University {currentYear}
+      &copy; Iowa State University & University at Buffalo {currentYear}
     </footer>
 };
 
