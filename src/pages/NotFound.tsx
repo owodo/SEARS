@@ -23,7 +23,7 @@ const NotFound = () => {
       </div>
       <footer className="w-full text-center py-4 text-muted-foreground text-sm border-t mt-8">
         <img src="/watermark-logo.png" alt="SEARSv2 Logo" className="mx-auto mb-2 h-16 opacity-90" />
-        &copy; Iowa State University {currentYear}
+        &copy; Iowa State University & University at Buffalo {currentYear}
       </footer>
     </div>
   );
