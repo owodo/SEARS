@@ -70,7 +70,7 @@ const Index = () => {
   return (
     <div className="min-h-screen">
       <HeroSection
-        title={<span>SEARS<sup className="text-base align-super">v2</sup></span>}
+        title={<span>SEARS<sup className="text-base align-super">v3</sup></span>}
         subtitle={<span>Secure portal for managing material science experiments across multiple laboratories. Store, analyze, and collaborate on your research data with confidence.</span>}
       >
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -101,7 +101,7 @@ const Index = () => {
             Advanced Research Management
           </h2>
           <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-            Built specifically for material science laboratories, SEARS<sup className="text-base align-super">v2</sup> provides comprehensive 
+            Built specifically for material science laboratories, SEARS<sup className="text-base align-super">v3</sup> provides comprehensive 
             experiment management with secure data storage and powerful collaboration tools.
           </p>
         </div>
@@ -132,7 +132,7 @@ const Index = () => {
             Ready to Transform Your Lab?
           </h2>
           <p className="text-lg text-accent-foreground/90 mb-8">
-            Join laboratories worldwide using SEARS<sup className="text-base align-super">v2</sup> to streamline their research workflows 
+            Join laboratories worldwide using SEARS<sup className="text-base align-super">v3</sup> to streamline their research workflows 
             and accelerate scientific discovery.
           </p>
           <Button 
@@ -154,7 +154,7 @@ const Index = () => {
             <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
               <Beaker className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold text-scientific-navy">SEARS<sup className="text-base align-super">v2</sup></span>
+            <span className="text-xl font-bold text-scientific-navy">SEARS<sup className="text-base align-super">v3</sup></span>
           </div>
           <p className="text-muted-foreground">
             Secure material science experiment management platform
