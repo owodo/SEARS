@@ -48,8 +48,19 @@ const Labs = () => {
   const [inviteLabId, setInviteLabId] = useState('');
   const [isInviting, setIsInviting] = useState(false);
 
+  // Redirect non-universal-owners away.
+  // IMPORTANT: wait until BOTH loading is done AND the profile has loaded.
+  // On a fresh refresh, `loading` flips to false a moment before the profile
+  // fetch resolves; without the `profile` check we would wrongly redirect a
+  // universal owner to /dashboard during that gap.
   useEffect(() => {
-    if (!loading && (!user || profile?.role !== 'universal_owner')) {
+    if (loading) return;
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+    if (!profile) return; // profile still loading — wait, don't redirect yet
+    if (profile.role !== 'universal_owner') {
       navigate('/dashboard');
     }
   }, [user, profile, loading, navigate]);
@@ -186,7 +197,9 @@ const Labs = () => {
     }
   };
 
-  if (loading) {
+  // Show spinner while auth OR profile is still loading (prevents a blank
+  // flash on refresh before the profile resolves).
+  if (loading || (user && !profile)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-subtle">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
