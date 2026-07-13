@@ -15,7 +15,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { LogOut } from 'lucide-react';
+import { LogOut, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { 
@@ -501,8 +501,11 @@ export const LabOwnerDashboard = () => {
 
   return (
     <div className="space-y-6 px-4 py-8 max-w-7xl mx-auto">
-      {/* SignOut button at the very top */}
-      <div className="w-full flex justify-end mb-2">
+      {/* Settings + SignOut buttons at the very top */}
+      <div className="w-full flex justify-end mb-2 gap-2">
+        <Button variant="outline" onClick={() => navigate('/profile')}>
+          <Settings className="w-4 h-4 mr-2" /> Settings
+        </Button>
         <SignOutButton />
       </div>
       {/* Header */}
