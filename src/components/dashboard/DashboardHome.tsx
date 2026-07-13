@@ -237,7 +237,7 @@ export const DashboardHome = () => {
       <div className="bg-gradient-primary rounded-xl p-6 text-primary-foreground">
         <h2 className="text-2xl font-bold mb-2">{getWelcomeMessage()}</h2>
         <p className="text-primary-foreground/90">
-          Welcome to your SEARSv2 dashboard. Manage your experiments and collaborate with your team.
+          Welcome to your SEARSv3 dashboard. Manage your experiments and collaborate with your team.
         </p>
       </div>
 
