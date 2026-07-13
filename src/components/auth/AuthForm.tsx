@@ -92,7 +92,7 @@ export const AuthForm = () => {
             />
             <span className="text-xl font-bold text-scientific-navy">SEARS</span>
           </div>
-          <CardTitle className="text-2xl font-bold text-scientific-navy">SEARS<sup className="text-base align-super">v2</sup></CardTitle>
+          <CardTitle className="text-2xl font-bold text-scientific-navy">SEARS<sup className="text-base align-super">v3</sup></CardTitle>
           <CardDescription>
             Secure portal for material science research
           </CardDescription>
