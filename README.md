@@ -1,6 +1,6 @@
 # SEARS v3
 
-**Shared Experiment Aggregation and Retrieval System** — an AI-powered electronic lab notebook for material science research.
+**Shared Experiment Aggregation and Retrieval System** — an intelligent electronic lab notebook for material science research.
 
 Built for Iowa State University & University at Buffalo.
 
