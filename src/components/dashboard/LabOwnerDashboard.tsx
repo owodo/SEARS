@@ -327,30 +327,28 @@ export const LabOwnerDashboard = () => {
     setIsInviting(true);
     
     try {
-      // Create user account first, then the profile will be created by trigger
-      const redirectUrl = `${window.location.origin}/auth/callback`;
-      const { error } = await supabase.auth.signUp({
-        email: inviteEmail,
-        password: 'TempPassword123!',
-        options: {
-          emailRedirectTo: redirectUrl,
-          data: {
-            first_name: inviteFirstName,
-            last_name: inviteLastName,
-            role: 'scientist',
-            lab_id: profile?.lab_id
-          }
-        }
+      // Use the invite-scientist edge function. It runs server-side with the
+      // Admin API, so (a) the lab owner's own session is NOT replaced, and
+      // (b) lab_id is written onto the new profile explicitly — the
+      // handle_new_user trigger does not copy lab_id from signup metadata.
+      const { data, error } = await supabase.functions.invoke('invite-scientist', {
+        body: {
+          email: inviteEmail,
+          firstName: inviteFirstName,
+          lastName: inviteLastName,
+          labId: profile.lab_id,
+        },
       });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
-      toast.success('Scientist invited successfully');
+      toast.success(data?.message || 'Scientist invited successfully');
       setInviteEmail('');
       setInviteFirstName('');
       setInviteLastName('');
-      fetchScientists();
-      fetchLabStats();
+      await fetchScientists();
+      await fetchLabStats();
     } catch (error: any) {
       console.error('Error inviting scientist:', error);
       toast.error(error.message || 'Failed to invite scientist');
