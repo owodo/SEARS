@@ -22,6 +22,13 @@ interface MeasurementsListProps {
   refreshTrigger?: number; // increment this from parent to force a refresh
 }
 
+// Renders the recorder's name. Falls back gracefully if the profile can't be
+// read (e.g. a removed user) instead of showing an empty space.
+const recordedBy = (p?: { first_name?: string; last_name?: string } | null) => {
+  const name = `${p?.first_name ?? ''} ${p?.last_name ?? ''}`.trim();
+  return name || 'Unknown user';
+};
+
 export const MeasurementsList = ({
   sectionId,
   refreshTrigger,
@@ -109,7 +116,7 @@ export const MeasurementsList = ({
                     <td className="px-3 py-1.5">{m.batch_number}</td>
                     <td className="px-3 py-1.5 font-mono">{m.reading_number}</td>
                     <td className="px-3 py-1.5 text-muted-foreground text-xs">
-                      {m.profiles?.first_name} {m.profiles?.last_name}
+                      {recordedBy(m.profiles)}
                     </td>
                   </tr>
                 ))}
@@ -142,8 +149,7 @@ export const MeasurementsList = ({
                   <div>
                     <p className="text-sm font-medium">Recorded by</p>
                     <p>
-                      {measurement.profiles?.first_name}{' '}
-                      {measurement.profiles?.last_name}
+                      {recordedBy(measurement.profiles)}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(measurement.created_at).toLocaleString()}
