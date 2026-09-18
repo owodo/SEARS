@@ -213,7 +213,7 @@ export const FileUploadSection = ({ sectionId, sectionType }: FileUploadSectionP
                       <p className="font-medium">{file.filename}</p>
                       <p className="text-sm text-muted-foreground">
                         {formatFileSize(file.file_size)} • 
-                        Uploaded by {file.profiles?.first_name} {file.profiles?.last_name} • 
+                        Uploaded by {`${file.profiles?.first_name ?? ""} ${file.profiles?.last_name ?? ""}`.trim() || "Unknown user"} • 
                         {new Date(file.created_at).toLocaleString()}
                       </p>
                     </div>
